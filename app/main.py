@@ -14,11 +14,24 @@ class RequestBody(BaseModel):
 # Main server 요청시 이곳으로 오게 됨
 @app.post("/main")
 def main(request: RequestBody):
-    
+    input = request.prompt
 
-def routing(category): 
+    # 질의 카테고리 분류 -> 라우팅 -> 해당 메소드 활용 -> 스프링부트 파싱 후 반환
+    category = classify(input)
+    data = routing(category, input)
+
+    return parsing(category, data)
+
+# 메인서버 리턴용 파싱 메소드
+def parsing(category: str, data):
+    return {
+        "category": category,
+        "data": data
+    }
+
+def routing(category, text:str): 
     if(category == "일정생성"): 
-        generate_schedule() 
+        return generate_schedule(text) 
     elif(category == "일정조회"): 
         return 
     elif(category == "일정수정"): 
@@ -35,8 +48,7 @@ def routing(category):
         return
 
 # 일정 생성
-def generate_schedule(request: RequestBody):
-    text = request.prompt
+def generate_schedule(text:str):
     try:
         prompt = (
             "다음 요청문에서 일정 생성 정보를 JSON 형식으로 추출하세요.\n"
@@ -58,7 +70,7 @@ def generate_schedule(request: RequestBody):
         # JSON 파싱
         schedule_data = json.loads(cleaned)
 
-        return {"result": schedule_data}
+        return schedule_data
 
     except json.JSONDecodeError:
         raise HTTPException(
@@ -69,17 +81,17 @@ def generate_schedule(request: RequestBody):
         raise HTTPException(status_code=500, detail=str(e))
     
 # 카테고리 분류
-def classify(request: RequestBody):
+def classify(text:str):
     try:
         prompt = (
             "다음 요청문을 일정생성/일정조회/일정삭제/일정수정/모임생성 중 하나로 분류하세요. "
             "해당하지 않으면 'null' 을 반환하세요.\n"
-            f"요청문: {request.prompt}"
+            f"요청문: {text}"
         )
 
         result = generate_text(prompt, model="gemini-2.5-flash")
 
-        return {"result": result}
+        return result.strip()
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
