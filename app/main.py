@@ -11,6 +11,29 @@ app = FastAPI(title="AI Server", version="1.0.0")
 class RequestBody(BaseModel):
     prompt: str
 
+# Main server 요청시 이곳으로 오게 됨
+@app.post("/main")
+def main(request: RequestBody):
+    
+
+def routing(category): 
+    if(category == "일정생성"): 
+        generate_schedule() 
+    elif(category == "일정조회"): 
+        return 
+    elif(category == "일정수정"): 
+        return 
+    elif(category == "일정삭제"): 
+        return 
+    elif(category == "모임생성"): 
+        return 
+    elif(category == "모임조회"): 
+        return 
+    elif(category == "모임수정"): 
+        return 
+    elif(category == "모임삭제"): 
+        return
+
 # 일정 생성
 def generate_schedule(request: RequestBody):
     text = request.prompt
