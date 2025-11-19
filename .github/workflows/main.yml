@@ -1,0 +1,27 @@
+name: 환경변수 업로드 방지
+
+on:
+  push:
+    branches:
+      - '**'   # 모든 브랜치
+  pull_request:
+    branches:
+      - '**'
+
+jobs:
+  block-env:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for .env file
+        run: |
+          if git diff --name-only ${{ github.sha }}^ ${{ github.sha }} | grep -q "^\.env$"; then
+            echo "❌ .env 파일이 감지되었습니다"
+            exit 1
+          else
+            echo "✅  .env 파일이 미감지 되었습니"
+          fi
+          
