@@ -3,6 +3,8 @@ from app.gemini import generate_text
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from pydantic import BaseModel
+from pydantic import BaseModel
+from typing import Any, Optional
 import uvicorn
 import json
 # cd C:\Users\HJ\Desktop\AI
@@ -315,6 +317,48 @@ def classify(text:str):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+class SummaryRequest(BaseModel):
+    category: str
+    data: Any 
+
+    
+@app.post("/summary")
+def generate_summary_api(req: SummaryRequest):
+    try:
+        prompt = (
+            "너는 사용자의 일정 관리 비서야. 아래 '결과 데이터'를 분석해서 사용자에게 **가장 필요한 정보를 요약(Briefing)**해줘.\n\n"
+            
+            f"카테고리: {req.category}\n"
+            f"데이터: {json.dumps(req.data, ensure_ascii=False, default=str)}\n\n"
+
+            "⭐⭐[상황별 브리핑 가이드]⭐⭐\n"
+            "1. **모임조회 (가장 중요)**:\n"
+            "   - 데이터가 리스트라면 '총 N개의 모임이 있습니다'로 시작.\n"
+            "   - **확정된 모임(CONFIRMED)**: '[모임명]은 [날짜] [시간]에 확정되었어요. 늦지 않게 준비하세요!'\n"
+            "   - **조율 중(PENDING)**: '[모임명]은 아직 조율 중이에요. 참여자 N명 중 M명이 응답했어요.'\n"
+            "   - **종료됨(CLOSED)**: '[모임명]은 종료된 모임입니다.'\n"
+            "   - 참여자 이름이 있다면 '누구누구님이 아직 응답하지 않았어요' 처럼 팁을 줘도 좋아.\n"
+            
+            "2. **일정조회**:\n"
+            "   - '요청하신 날짜에 [일정제목] 등 총 N건의 일정이 있어요.'\n"
+            
+            "3. **생성/삭제**:\n"
+            "   - 깔끔하게 완료 사실만 전달. (예: '소고기 파티 일정을 등록했습니다.')\n\n"
+            
+            "⭐⭐[말투]⭐⭐\n"
+            "- 친절하고 전문적인 비서 톤 (해요체).\n"
+            "- 너무 길지 않게 1~2문장으로 핵심만 전달.\n"
+            "- 응답은 오직 **텍스트(String)**만 반환."
+        )
+
+        summary_text = generate_text(prompt, model="gemini-2.5-flash")
+        return {"summary": summary_text.strip().strip('"')}
+
+    except Exception as e:
+        print(f"Error: {e}")
+        return {"summary": "요청하신 정보는 다음과 같아요."}
 
 def to_timestamp_millis(iso_str):
     if not iso_str:
