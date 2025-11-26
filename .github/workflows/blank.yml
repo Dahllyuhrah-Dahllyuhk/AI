@@ -80,19 +80,26 @@ jobs:
 
   notify:
     runs-on: ubuntu-latest
-    needs: [build-and-push, deploy] # 위 두 작업의 상태를 확인
-    if: always() # 성공/실패 여부와 상관없이 항상 실행
+    needs: [build-and-push, deploy]
+    if: always()
     steps:
       - name: Send Discord Notification
         uses: sarisia/actions-status-discord@v1
         if: always()
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          # 빌드나 배포 중 하나라도 실패하면 failure, 아니면 success로 표시
-          status: ${{ contains(needs.*.result, 'failure') && '실패' || contains(needs.*.result, 'cancelled') && '취소됨' || '성공' }}
-          title: "AI 서버 배포가 진행되었습니다 😃"
+          # 🚨 중요: status에는 무조건 영어만 들어가야 합니다! (failure, cancelled, success)
+          status: ${{ contains(needs.*.result, 'failure') && 'failure' || contains(needs.*.result, 'cancelled') && 'cancelled' || 'success' }}
+          
+          # ✅ 한글 메시지는 여기에 적으세요
+          title: "AI 서버 배포 ${{ contains(needs.*.result, 'failure') && '실패 ❌' || contains(needs.*.result, 'cancelled') && '취소됨 ⚠️' || '성공 ✅' }}"
+          
           description: |
-            Build Status: ${{ needs.build-and-push.result }}
-            Deploy Status: ${{ needs.deploy.result }}
-          color: 0x0000ff
-          url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            **상세 상태:**
+            - 빌드: ${{ needs.build-and-push.result }}
+            - 배포: ${{ needs.deploy.result }}
+            
+            [워크플로우 확인하기](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          
+          # (선택) 색상 커스텀 (성공: 초록, 실패: 빨강) - status가 자동으로 정해주긴 하지만 강제할 수도 있습니다.
+          # color: ${{ contains(needs.*.result, 'failure') && '0xff0000' || '0x00ff00' }}
