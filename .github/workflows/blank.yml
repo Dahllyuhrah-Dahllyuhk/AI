@@ -42,6 +42,7 @@ jobs:
             --build-arg GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }} \
             -t $IMAGE_NAME:latest \
             -t $IMAGE_NAME:${{ github.sha }} \
+            .
 
       - name: Push AI image
         run: |
