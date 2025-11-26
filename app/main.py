@@ -34,16 +34,86 @@ def parsing(category: str, data):
 
 def routing(category, text:str): 
     if(category == "일정생성"): 
+        print("일정생성")
         return generate_schedule(text) 
     elif(category == "일정조회"): 
+        print("일정조회")
         return search_schedule(text)
     elif(category == "일정삭제"): 
+        print("일정삭제")
         return search_schedule(text)
     elif(category == "모임생성"): 
+        print("모임생성")
         return generate_meeting(text)
     elif(category == "모임조회"): 
-        return 
+        print("모임조회")
+        return get_meeting(text)
     
+
+#모임 조회
+def get_meeting(text:str):
+    # 1. 날짜 계산을 위한 기준 시간 설정 (KST)
+    try:
+        kst = ZoneInfo("Asia/Seoul")
+    except:
+        from datetime import timezone, timedelta
+        kst = timezone(timedelta(hours=9))
+
+    now = datetime.now(kst)
+    current_date_str = now.strftime("%Y-%m-%d %H:%M:%S (%A)") # 예: 2025-11-26 (Wednesday)
+
+    try:
+        prompt = (
+            f"기준 시각(Today): {current_date_str}\n"
+            "사용자의 요청에서 검색 조건인 '모임 제목(title)'과 '날짜 범위(Start/End)'를 JSON으로 추출하세요.\n"
+            "응답은 반드시 JSON만 포함하세요. (코드블록 ``` 금지)\n\n"
+
+            "⭐⭐[추출 규칙]⭐⭐\n"
+            "1. **title**: 검색할 키워드. (없으면 \"\")\n"
+            "2. **dateRangeStart**, **dateRangeEnd**:\n"
+            "   - 형식: 'YYYY-MM-DD'\n"
+            "   - 날짜 언급이 없으면 둘 다 null로 설정.\n"
+            "   - '내일' -> 내일 날짜로 Start, End 동일하게 설정.\n"
+            "   - '다음 주' -> 다음 주 월요일 ~ 일요일 범위로 설정.\n"
+            "   - '11월 모임' -> 11월 1일 ~ 11월 30일 범위로 설정.\n\n"
+
+            "⭐⭐[예시]⭐⭐\n"
+            "Q: '다음 주 회식 모임 있어?'\n"
+            "A: {\"title\": \"회식\", \"dateRangeStart\": \"2025-12-01\", \"dateRangeEnd\": \"2025-12-07\"}\n\n"
+            
+            "Q: '크리스마스 모임 정보 알려줘'\n"
+            "A: {\"title\": \"크리스마스\", \"dateRangeStart\": \"2025-12-25\", \"dateRangeEnd\": \"2025-12-25\"}\n\n"
+            
+            "Q: '잡혀있는 모임 다 보여줘' (날짜/제목 없음)\n"
+            "A: {\"title\": \"\", \"dateRangeStart\": null, \"dateRangeEnd\": null}\n\n"
+
+            f"요청문: {text}"
+        )
+
+        # 모델 호출
+        result = generate_text(prompt, model="gemini-2.5-flash")
+
+        # 결과 정제
+        cleaned = (
+            result.replace("```json", "")
+                  .replace("```", "")
+                  .strip()
+        )
+
+        data = json.loads(cleaned)
+        print(data)
+        
+        # 반환 데이터 구성
+        return {
+            "title": data.get("title", ""),
+            "dateRangeStart": data.get("dateRangeStart"), # null 가능
+            "dateRangeEnd": data.get("dateRangeEnd")      # null 가능
+        }
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="JSON 파싱 실패")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # 모임 생성
 def generate_meeting(text: str):
@@ -234,7 +304,7 @@ def search_schedule(text: str):
 def classify(text:str):
     try:
         prompt = (
-            "다음 요청문을 일정생성/일정조회/일정삭제/일정수정/모임생성 중 하나로 분류하세요. "
+            "다음 요청문을 일정생성/일정조회/일정삭제/모임조회/모임생성 중 하나로 분류하세요. "
             "해당하지 않으면 'null' 을 반환하세요.\n"
             f"요청문: {text}"
         )
