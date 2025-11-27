@@ -3,7 +3,7 @@ FROM python:3.12-slim
 
 # --- 추가된 부분 ---
 ARG GEMINI_API_KEY
-ENV GEMINI_API_KEY=$GEMINI_API_KEY
+ENV GEMINI_API_KEY=$OPENAI_API_KEY
 # -------------------
 
 # 작업 디렉토리 생성
