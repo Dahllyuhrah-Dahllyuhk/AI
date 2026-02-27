@@ -1,0 +1,121 @@
+name: AI CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  workflow_dispatch: {}
+
+env:
+  AWS_REGION:   ${{ secrets.AWS_REGION }}
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+  ECR_REPO:     ${{ secrets.ECR_AI_REPO }}
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. 소스 체크아웃 ────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Docker Buildx ─────────────────────────────────────────────────
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ── 3. AWS 자격증명 ──────────────────────────────────────────────────
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      # ── 4. ECR 로그인 ────────────────────────────────────────────────────
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # ── 5. 이미지 빌드 & 푸시 ───────────────────────────────────────────
+      - name: Build and push image
+        run: |
+          IMAGE=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO }}
+          SHA=${{ github.sha }}
+
+          docker build \
+            -t $IMAGE:$SHA \
+            -t $IMAGE:latest \
+            --cache-from $IMAGE:latest \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            .
+
+          docker push $IMAGE:$SHA
+          docker push $IMAGE:latest
+
+      # ── 6. ECR 이미지 최대 3개 유지 ─────────────────────────────────────
+      - name: Prune old ECR images (keep latest 3)
+        run: |
+          IMAGE_DETAILS=$(aws ecr describe-images \
+            --repository-name ${{ env.ECR_REPO }} \
+            --region ${{ env.AWS_REGION }} \
+            --query 'sort_by(imageDetails, &imagePushedAt)' \
+            --output json)
+
+          TOTAL=$(echo $IMAGE_DETAILS | jq length)
+          DELETE_COUNT=$((TOTAL - 3))
+
+          if [ $DELETE_COUNT -le 0 ]; then
+            echo "이미지가 3개 이하입니다. 삭제 건너뜀."
+            exit 0
+          fi
+
+          echo "전체 ${TOTAL}개 중 오래된 ${DELETE_COUNT}개 삭제"
+          DIGESTS=$(echo $IMAGE_DETAILS | jq -r ".[0:$DELETE_COUNT] | .[].imageDigest")
+
+          for DIGEST in $DIGESTS; do
+            aws ecr batch-delete-image \
+              --repository-name ${{ env.ECR_REPO }} \
+              --region ${{ env.AWS_REGION }} \
+              --image-ids imageDigest=$DIGEST
+            echo "삭제: $DIGEST"
+          done
+
+      # ── 7. EC2 배포 ──────────────────────────────────────────────────────
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host:     ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key:      ${{ secrets.DEPLOY_KEY }}
+          script: |
+            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} \
+              | docker login --username AWS --password-stdin \
+                ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+
+            cd /home/ubuntu/matuabom
+
+            docker compose pull ai
+            docker compose up -d --no-deps --force-recreate ai
+
+            # 헬스체크 (최대 60초)
+            echo "AI 헬스체크 시작..."
+            for i in $(seq 1 12); do
+              HTTP_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" \
+                http://localhost:5000/docs 2>/dev/null || echo "000")
+
+              if [ "$HTTP_STATUS" = "200" ]; then
+                echo "AI 배포 성공 (attempt $i)"
+                break
+              fi
+
+              if [ $i -eq 12 ]; then
+                echo "AI 헬스체크 실패 (HTTP=$HTTP_STATUS)"
+                docker compose logs --tail=30 ai
+                exit 1
+              fi
+
+              echo "대기 중... ($i/12, HTTP=$HTTP_STATUS)"
+              sleep 5
+            done
+
+            docker image prune -f
